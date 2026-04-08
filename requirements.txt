@@ -1,0 +1,4 @@
+﻿Flask==2.3.3
+Werkzeug==2.3.7
+Pillow>=11.0.0
+gunicorn==21.2.0
