@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Full Stack App - Number Plate Reader</title>
-    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -323,27 +322,24 @@
                 
                 const imageData = canvas.toDataURL('image/jpeg', 0.95);
                 
-                // Perform OCR using Tesseract.js on client-side
-                updateStatus('cameraStatus', 'Running OCR...', 'loading');
+                // Send image to server for OCR using EasyOCR
+                updateStatus('cameraStatus', 'Running OCR on server...', 'loading');
                 
-                const { data: { text, confidence } } = await Tesseract.recognize(
-                    canvas,
-                    'eng',
-                    {
-                        logger: m => console.log('OCR Progress:', m.progress)
-                    }
-                );
+                const response = await fetch('/api/ocr', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        image: imageData
+                    })
+                });
                 
-                // Clean extracted text
-                const cleanedText = text
-                    .replace(/\n/g, ' ')
-                    .replace(/[^a-zA-Z0-9\s]/g, '')
-                    .trim()
-                    .replace(/\s+/g, ' ');
+                const result = await response.json();
                 
-                if (cleanedText.length > 0) {
+                if (result.success && result.text.length > 0) {
                     document.getElementById('capturedImage').src = imageData;
-                    document.getElementById('plateText').textContent = cleanedText;
+                    document.getElementById('plateText').textContent = result.text;
                     document.getElementById('plateResult').classList.add('show');
                     updateStatus('cameraStatus', '✓ Plate detected', 'success');
                 } else {
