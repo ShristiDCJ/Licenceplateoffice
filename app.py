@@ -2,13 +2,22 @@ from flask import Flask, render_template, jsonify, request
 import sqlite3
 import os
 import easyocr
-import base64
-from io import BytesIO
 from PIL import Image
-import numpy as np
+import io
+import base64
 
 app = Flask(__name__, template_folder='templates')
 DB_PATH = os.path.join(os.path.dirname(__file__), 'hello_world.db')
+
+# Initialize EasyOCR reader (loads on first use)
+ocr_reader = None
+
+def get_ocr_reader():
+    """Lazy load OCR reader to avoid memory issues"""
+    global ocr_reader
+    if ocr_reader is None:
+        ocr_reader = easyocr.Reader(['en'], gpu=False)
+    return ocr_reader
 
 def init_db():
     """Initialize the database with sample data"""
@@ -34,55 +43,48 @@ def init_db():
 # Initialize database on app startup
 init_db()
 
-# Initialize EasyOCR reader (loads model on startup)
-try:
-    reader = easyocr.Reader(['en'])
-    print("EasyOCR reader initialized successfully")
-except Exception as e:
-    print(f"EasyOCR initialization error: {e}")
-    reader = None
-
 @app.route('/')
 def index():
     """Render the main page"""
     return render_template('index.html')
 
 @app.route('/api/ocr', methods=['POST'])
-def perform_ocr():
-    """Perform OCR on uploaded image"""
+def process_ocr():
+    """Process image with EasyOCR and extract text"""
     try:
-        if 'image' not in request.json:
+        # Get image from request
+        if 'image' not in request.files:
             return jsonify({'error': 'No image provided'}), 400
         
-        # Decode base64 image
-        image_data = request.json['image']
-        if ',' in image_data:
-            image_data = image_data.split(',')[1]
+        image_file = request.files['image']
         
-        image_bytes = base64.b64decode(image_data)
-        image = Image.open(BytesIO(image_bytes))
-        image_array = np.array(image)
+        # Read image
+        img = Image.open(image_file.stream)
         
-        if reader is None:
-            return jsonify({'error': 'OCR model not initialized'}), 500
+        # Perform OCR using EasyOCR
+        reader = get_ocr_reader()
+        results = reader.readtext(img)
         
-        # Perform OCR
-        results = reader.readtext(image_array, detail=0)
-        detected_text = ' '.join(results)
+        # Extract text from results
+        text_lines = []
+        for (bbox, text, confidence) in results:
+            if confidence > 0.3:  # Filter low confidence results
+                text_lines.append(text)
         
-        # Clean text
-        cleaned_text = detected_text.replace('\n', ' ').strip()
-        cleaned_text = ''.join(c for c in cleaned_text if c.isalnum() or c.isspace())
-        cleaned_text = ' '.join(cleaned_text.split())
+        # Clean extracted text
+        full_text = ' '.join(text_lines)
+        cleaned_text = full_text.replace('\n', ' ').strip()
+        cleaned_text = ''.join(c for c in cleaned_text if c.isalnum() or c.isspace()).strip()
+        cleaned_text = ' '.join(cleaned_text.split())  # Remove extra spaces
         
         return jsonify({
+            'success': True,
             'text': cleaned_text,
-            'success': True
+            'confidence': sum([conf for _, _, conf in results]) / len(results) if results else 0
         })
     
     except Exception as e:
-        print(f"OCR error: {e}")
-        return jsonify({'error': str(e), 'success': False}), 500
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     init_db()

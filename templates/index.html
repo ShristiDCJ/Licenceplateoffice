@@ -292,6 +292,7 @@
         function stopCamera() {
             if (stream) {
                 stream.getTracks().forEach(track => track.stop());
+                stream = null;
             }
             
             document.getElementById('cameraContainer').style.display = 'none';
@@ -322,32 +323,40 @@
                 
                 const imageData = canvas.toDataURL('image/jpeg', 0.95);
                 
-                // Send image to server for OCR using EasyOCR
-                updateStatus('cameraStatus', 'Running OCR on server...', 'loading');
+                // Send image to backend for OCR processing
+                updateStatus('cameraStatus', 'Running OCR...', 'loading');
+                
+                // Convert base64 to blob
+                const res = await fetch(imageData);
+                const blob = await res.blob();
+                
+                // Create FormData and send to backend
+                const formData = new FormData();
+                formData.append('image', blob, 'capture.jpg');
                 
                 const response = await fetch('/api/ocr', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        image: imageData
-                    })
+                    body: formData
                 });
                 
                 const result = await response.json();
                 
-                if (result.success && result.text.length > 0) {
+                if (response.ok && result.success) {
                     document.getElementById('capturedImage').src = imageData;
-                    document.getElementById('plateText').textContent = result.text;
+                    document.getElementById('plateText').textContent = result.text || 'No text detected';
                     document.getElementById('plateResult').classList.add('show');
                     updateStatus('cameraStatus', '✓ Plate detected', 'success');
+                    
+                    // Stop camera after successful capture
+                    setTimeout(() => {
+                        stopCamera();
+                    }, 1500);
                 } else {
-                    updateStatus('cameraStatus', '✗ No text detected in image', 'error');
+                    updateStatus('cameraStatus', '✗ ' + (result.error || 'No text detected in image'), 'error');
                 }
                 
             } catch (error) {
-                updateStatus('cameraStatus', '✗ Processing error', 'error');
+                updateStatus('cameraStatus', '✗ Processing error: ' + error.message, 'error');
                 console.error('Error:', error);
             } finally {
                 isProcessing = false;
