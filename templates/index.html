@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Full Stack App - Number Plate Reader</title>
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -292,7 +293,6 @@
         function stopCamera() {
             if (stream) {
                 stream.getTracks().forEach(track => track.stop());
-                stream = null;
             }
             
             document.getElementById('cameraContainer').style.display = 'none';
@@ -323,40 +323,35 @@
                 
                 const imageData = canvas.toDataURL('image/jpeg', 0.95);
                 
-                // Send image to backend for OCR processing
+                // Perform OCR using Tesseract.js on client-side
                 updateStatus('cameraStatus', 'Running OCR...', 'loading');
                 
-                // Convert base64 to blob
-                const res = await fetch(imageData);
-                const blob = await res.blob();
+                const { data: { text, confidence } } = await Tesseract.recognize(
+                    canvas,
+                    'eng',
+                    {
+                        logger: m => console.log('OCR Progress:', m.progress)
+                    }
+                );
                 
-                // Create FormData and send to backend
-                const formData = new FormData();
-                formData.append('image', blob, 'capture.jpg');
+                // Clean extracted text
+                const cleanedText = text
+                    .replace(/\n/g, ' ')
+                    .replace(/[^a-zA-Z0-9\s]/g, '')
+                    .trim()
+                    .replace(/\s+/g, ' ');
                 
-                const response = await fetch('/api/ocr', {
-                    method: 'POST',
-                    body: formData
-                });
-                
-                const result = await response.json();
-                
-                if (response.ok && result.success) {
+                if (cleanedText.length > 0) {
                     document.getElementById('capturedImage').src = imageData;
-                    document.getElementById('plateText').textContent = result.text || 'No text detected';
+                    document.getElementById('plateText').textContent = cleanedText;
                     document.getElementById('plateResult').classList.add('show');
                     updateStatus('cameraStatus', '✓ Plate detected', 'success');
-                    
-                    // Stop camera after successful capture
-                    setTimeout(() => {
-                        stopCamera();
-                    }, 1500);
                 } else {
-                    updateStatus('cameraStatus', '✗ ' + (result.error || 'No text detected in image'), 'error');
+                    updateStatus('cameraStatus', '✗ No text detected in image', 'error');
                 }
                 
             } catch (error) {
-                updateStatus('cameraStatus', '✗ Processing error: ' + error.message, 'error');
+                updateStatus('cameraStatus', '✗ Processing error', 'error');
                 console.error('Error:', error);
             } finally {
                 isProcessing = false;
