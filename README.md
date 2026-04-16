@@ -1,4 +1,4 @@
-# Full Stack Hello World App - README
+# Full Stack Licence Plate Reader App - README
 
 ## Overview
 This is a full-stack "Hello World" application demonstrating:
